@@ -2,40 +2,57 @@ import streamlit as st
 import networkx as nx
 import pandas as pd
 import pydeck as pdk
+import overpy
+from geopy.distance import geodesic  # Para calcular distâncias geográficas
 
-# Localizações com coordenadas simuladas
+# Consulta à API Overpass
+api = overpy.Overpass()
+result = api.query("""
+area["name"="Distrito Federal"]->.searchArea;
+(
+  node["amenity"="restaurant"]["cuisine"="pizza"](area.searchArea);
+  node["amenity"="fast_food"]["cuisine"="pizza"](area.searchArea);
+);
+out body;
+""")
+
+# Criar dicionário de localizações a partir dos dados da API
 locations = {
-    "Centro": (-15.793889, -47.882778),
-    "Hospital": (-15.795000, -47.880000),
-    "Escola": (-15.800000, -47.885000),
-    "Estádio": (-15.798000, -47.890000),
-    "Shopping": (-15.796000, -47.895000)
+    node.tags.get("name", f"Sem nome {i}"): (float(node.lat), float(node.lon))
+    for i, node in enumerate(result.nodes)
 }
 
-# Criar grafo com pesos simulando tempo/distância
-G = nx.DiGraph()
-edges = [
-    ("Centro", "Hospital", 5),
-    ("Centro", "Escola", 10),
-    ("Hospital", "Escola", 3),
-    ("Escola", "Estádio", 4),
-    ("Estádio", "Shopping", 2),
-    ("Centro", "Shopping", 20)
-]
-for u, v, w in edges:
-    G.add_edge(u, v, weight=w)
-    G.add_edge(v, u, weight=w)  # Grafo não direcionado
+# Exibir os nós no console para depuração
+for name, (lat, lon) in locations.items():
+    print(name, lat, lon)
 
+# Criar grafo com pesos baseados na distância geográfica
+G = nx.DiGraph()
+location_names = list(locations.keys())
+
+# Definir uma distância máxima para conectar os nós (em metros)
+distancia_maxima = 1000  # Exemplo: 1000 metros (1 km)
+
+for i, loc1 in enumerate(location_names):
+    for j, loc2 in enumerate(location_names):
+        if i != j:  # Evitar laços
+            coord1 = locations[loc1]
+            coord2 = locations[loc2]
+            distance = geodesic(coord1, coord2).meters  # Distância em metros
+            if distance <= distancia_maxima:  # Conectar apenas se a distância for menor ou igual ao limite
+                G.add_edge(loc1, loc2, weight=distance)
+
+# Interface do Streamlit
 st.title("Procurando menor caminho motoboy - Menor Caminho (Dijkstra)")
 
-origem = st.selectbox("Escolha o ponto de partida", list(locations.keys()))
-destino = st.selectbox("Escolha o destino", list(locations.keys()))
+origem = st.selectbox("Escolha o ponto de partida", location_names)
+destino = st.selectbox("Escolha o destino", location_names)
 
 if origem != destino:
     try:
         caminho = nx.dijkstra_path(G, origem, destino)
         custo = nx.dijkstra_path_length(G, origem, destino)
-        st.success(f"Caminho: {' ➡️ '.join(caminho)} (Custo: {custo})")
+        st.success(f"Caminho: {' ➡️ '.join(caminho)} (Custo: {custo:.2f} metros)")
     except nx.NetworkXNoPath:
         st.error("Não há caminho entre os pontos selecionados.")
         caminho = []
