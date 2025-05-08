@@ -24,6 +24,7 @@ edges = [
 ]
 for u, v, w in edges:
     G.add_edge(u, v, weight=w)
+    G.add_edge(v, u, weight=w)  # Grafo não direcionado
 
 st.title("Procurando menor caminho motoboy - Menor Caminho (Dijkstra)")
 
@@ -46,10 +47,19 @@ nodes_df = pd.DataFrame([
     {"name": name, "lat": lat, "lon": lon} for name, (lat, lon) in locations.items()
 ])
 
+# Arestas de todas as conexões no grafo
+all_edges_df = pd.DataFrame([
+    {
+        "from_lat": locations[u][0], "from_lon": locations[u][1],
+        "to_lat": locations[v][0], "to_lon": locations[v][1]
+    }
+    for u, v in G.edges
+])
+
 # Arestas do caminho encontrado
 edges_df = []
-for i in range(len(caminho)-1):
-    a, b = caminho[i], caminho[i+1]
+for i in range(len(caminho) - 1):
+    a, b = caminho[i], caminho[i + 1]
     from_lat, from_lon = locations[a]
     to_lat, to_lon = locations[b]
     edges_df.append({
@@ -59,22 +69,33 @@ for i in range(len(caminho)-1):
 
 edges_df = pd.DataFrame(edges_df)
 
-# Camadas do mapa
-points_layer = pdk.Layer(
-    "ScatterplotLayer",
-    data=nodes_df,
-    get_position='[lon, lat]',
-    get_color='[0, 0, 255]',
-    get_radius=70
+# Camada de todas as arestas (cinza)
+all_edges_layer = pdk.Layer(
+    "LineLayer",
+    data=all_edges_df,
+    get_source_position='[from_lon, from_lat]',
+    get_target_position='[to_lon, to_lat]',
+    get_color=[200, 200, 200],  # Cinza
+    get_width=2
 )
 
-edges_layer = pdk.Layer(
+# Camada de arestas do caminho encontrado (vermelho)
+path_edges_layer = pdk.Layer(
     "LineLayer",
     data=edges_df,
     get_source_position='[from_lon, from_lat]',
     get_target_position='[to_lon, to_lat]',
-    get_color=[255, 0, 0],
+    get_color=[255, 0, 0],  # Vermelho
     get_width=4
+)
+
+# Camada de nós (pontos)
+points_layer = pdk.Layer(
+    "ScatterplotLayer",
+    data=nodes_df,
+    get_position='[lon, lat]',
+    get_color='[0, 0, 255]',  # Azul
+    get_radius=70
 )
 
 # Mapa
@@ -86,5 +107,5 @@ st.pydeck_chart(pdk.Deck(
         zoom=13,
         pitch=0
     ),
-    layers=[points_layer, edges_layer]
+    layers=[all_edges_layer, points_layer, path_edges_layer]
 ))
