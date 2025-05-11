@@ -3,68 +3,97 @@ import networkx as nx
 import pandas as pd
 import pydeck as pdk
 import overpy
-from geopy.distance import geodesic  # Para calcular distâncias geográficas
+from geopy.distance import geodesic
 
-# Consulta à API Overpass
-api = overpy.Overpass()
-result = api.query("""
-area["name"="Distrito Federal"]->.searchArea;
-(
-  node["amenity"="restaurant"]["cuisine"="pizza"](area.searchArea);
-  node["amenity"="fast_food"]["cuisine"="pizza"](area.searchArea);
-);
-out body;
-""")
+# Configuração da página
+st.set_page_config(page_title="Menor Caminho Motoboy", layout="wide")
+st.title("📍 Encontrar Menor Caminho entre Pizzarias, Hospitais ou Farmácias")
 
-# Criar dicionário de localizações a partir dos dados da API
-locations = {
-    node.tags.get("name", f"Sem nome {i}"): (float(node.lat), float(node.lon))
-    for i, node in enumerate(result.nodes)
-}
+# 1. Seleção do tipo de amenidade
+tipo = st.selectbox("Escolha o tipo de amenidade", ["Pizzarias", "Hospitais", "Farmácias"])
 
-# Exibir os nós no console para depuração
-for name, (lat, lon) in locations.items():
-    print(name, lat, lon)
+# 2. Filtro Overpass conforme tipo
+if tipo == "Pizzarias":
+    overpass_filter = """
+    (
+      node["amenity"="restaurant"]["cuisine"="pizza"](area.searchArea);
+      node["amenity"="fast_food"]["cuisine"="pizza"](area.searchArea);
+    );
+    """
+elif tipo == "Hospitais":
+    overpass_filter = 'node["amenity"="hospital"](area.searchArea);'
+else:  # Farmácias
+    overpass_filter = 'node["amenity"="pharmacy"](area.searchArea);'
 
-# Criar grafo com pesos baseados na distância geográfica
+# 3. Consulta à API Overpass
+with st.spinner(f"Consultando {tipo.lower()} no OpenStreetMap..."):
+    api = overpy.Overpass()
+    query = f"""
+    area["name"="Plano Piloto"]->.searchArea;
+    {overpass_filter}
+    out body;
+    """
+    result = api.query(query)
+
+# 4. Extrair locais com nome definido
+locations = {}
+for i, node in enumerate(result.nodes):
+    name = node.tags.get("name")
+    if name:
+        locations[name] = (float(node.lat), float(node.lon))
+
+if not locations:
+    st.error(f"Nenhum {tipo.lower()} com nome encontrado no Plano Piloto.")
+    st.stop()
+
+# 5. Construir grafo com distâncias geográficas
 G = nx.DiGraph()
 location_names = list(locations.keys())
 
-# Definir uma distância máxima para conectar os nós (em metros)
-distancia_maxima = 1000  # Exemplo: 1000 metros (1 km)
+distancia_maxima = st.sidebar.slider(
+    "Distância máxima para conectar nós (em metros)",
+    min_value=500, max_value=50000, value=1000, step=100
+)
 
 for i, loc1 in enumerate(location_names):
     for j, loc2 in enumerate(location_names):
-        if i != j:  # Evitar laços
-            coord1 = locations[loc1]
-            coord2 = locations[loc2]
-            distance = geodesic(coord1, coord2).meters  # Distância em metros
-            if distance <= distancia_maxima:  # Conectar apenas se a distância for menor ou igual ao limite
-                G.add_edge(loc1, loc2, weight=distance)
+        if i != j:
+            dist = geodesic(locations[loc1], locations[loc2]).meters
+            if dist <= distancia_maxima:
+                G.add_edge(loc1, loc2, weight=dist)
 
-# Interface do Streamlit
-st.title("Procurando menor caminho motoboy - Menor Caminho (Dijkstra)")
+# 6. Nós isolados
+nodos_conectados = set(G.nodes)
+nodos_isolados = set(location_names) - nodos_conectados
 
-origem = st.selectbox("Escolha o ponto de partida", location_names)
-destino = st.selectbox("Escolha o destino", location_names)
+if nodos_isolados:
+    st.warning("Locais não conectados (distância > limite): " + ", ".join(nodos_isolados))
 
+# 7. Seleção de origem e destino entre nós conectados
+grafo_ativos = list(G.nodes)
+if len(grafo_ativos) < 2:
+    st.error("Poucos pontos conectados para calcular rotas.")
+    st.stop()
+
+origem = st.selectbox("Origem", grafo_ativos, index=0)
+destino = st.selectbox("Destino", grafo_ativos, index=1)
+
+# 8. Cálculo do menor caminho
+caminho, custo = [], 0
 if origem != destino:
     try:
         caminho = nx.dijkstra_path(G, origem, destino)
         custo = nx.dijkstra_path_length(G, origem, destino)
-        st.success(f"Caminho: {' ➡️ '.join(caminho)} (Custo: {custo:.2f} metros)")
+        st.success(f"📍 Menor caminho: {' ➡️ '.join(caminho)} — Total: {custo:.0f} m")
     except nx.NetworkXNoPath:
-        st.error("Não há caminho entre os pontos selecionados.")
-        caminho = []
-else:
-    caminho = []
+        st.error("❌ Não há caminho entre os pontos selecionados.")
 
-# Nós
+# 9. Dados para visualização no mapa
 nodes_df = pd.DataFrame([
-    {"name": name, "lat": lat, "lon": lon} for name, (lat, lon) in locations.items()
+    {"name": name, "lat": lat, "lon": lon}
+    for name, (lat, lon) in locations.items()
 ])
 
-# Arestas de todas as conexões no grafo
 all_edges_df = pd.DataFrame([
     {
         "from_lat": locations[u][0], "from_lon": locations[u][1],
@@ -73,56 +102,42 @@ all_edges_df = pd.DataFrame([
     for u, v in G.edges
 ])
 
-# Arestas do caminho encontrado
-edges_df = []
-for i in range(len(caminho) - 1):
-    a, b = caminho[i], caminho[i + 1]
-    from_lat, from_lon = locations[a]
-    to_lat, to_lon = locations[b]
-    edges_df.append({
-        "from_lat": from_lat, "from_lon": from_lon,
-        "to_lat": to_lat, "to_lon": to_lon
-    })
+path_edges_df = pd.DataFrame([
+    {
+        "from_lat": locations[a][0], "from_lon": locations[a][1],
+        "to_lat": locations[b][0], "to_lon": locations[b][1]
+    }
+    for a, b in zip(caminho, caminho[1:])
+])
 
-edges_df = pd.DataFrame(edges_df)
-
-# Camada de todas as arestas (cinza)
-all_edges_layer = pdk.Layer(
-    "LineLayer",
-    data=all_edges_df,
+# 10. Camadas Pydeck
+layer_arestas = pdk.Layer(
+    "LineLayer", data=all_edges_df,
     get_source_position='[from_lon, from_lat]',
     get_target_position='[to_lon, to_lat]',
-    get_color=[200, 200, 200],  # Cinza
-    get_width=2
+    get_color=[200, 200, 200], get_width=2
 )
 
-# Camada de arestas do caminho encontrado (vermelho)
-path_edges_layer = pdk.Layer(
-    "LineLayer",
-    data=edges_df,
+layer_caminho = pdk.Layer(
+    "LineLayer", data=path_edges_df,
     get_source_position='[from_lon, from_lat]',
     get_target_position='[to_lon, to_lat]',
-    get_color=[255, 0, 0],  # Vermelho
-    get_width=4
+    get_color=[255, 0, 0], get_width=4
 )
 
-# Camada de nós (pontos)
-points_layer = pdk.Layer(
-    "ScatterplotLayer",
-    data=nodes_df,
+layer_pontos = pdk.Layer(
+    "ScatterplotLayer", data=nodes_df,
     get_position='[lon, lat]',
-    get_color='[0, 0, 255]',  # Azul
-    get_radius=70
+    get_color='[0, 0, 255]', get_radius=70,
+    pickable=True
 )
 
-# Mapa
+# 11. Mapa interativo
 st.pydeck_chart(pdk.Deck(
     map_style='mapbox://styles/mapbox/light-v9',
     initial_view_state=pdk.ViewState(
-        latitude=-15.796,
-        longitude=-47.885,
-        zoom=13,
-        pitch=0
+        latitude=-15.796, longitude=-47.885, zoom=13
     ),
-    layers=[all_edges_layer, points_layer, path_edges_layer]
+    layers=[layer_arestas, layer_pontos, layer_caminho],
+    tooltip={"text": "{name}"}
 ))
