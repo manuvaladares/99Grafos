@@ -8,8 +8,8 @@ import heapq  # Para implementar a fila de prioridade
 from shapely.geometry import Point  # Importar Point do shapely
 
 # Configuração da página
-st.set_page_config(page_title="Menor Caminho Manual", layout="wide")
-st.title("📍 Usando o Algoritmo de Dijkstra para descobrir o menor caminho")
+st.set_page_config(page_title="99Grafos", layout="wide")
+st.title("📍 99Grafos - calcule a sua viagem com o algoritmo Dijkstra")
 st.markdown("""
             Com o algoritmo de Dijkstra, você pode encontrar o caminho mais curto entre dois pontos em Brasília, utilizando o grafo real de ruas.
             """)
@@ -262,6 +262,12 @@ if calcular and G_real is not None:
         layers=layers,
         tooltip={"text": "{name}"}
     ), height=800)
+
+    # Mostrar o custo da viagem, se o caminho foi calculado
+    if calcular and custo_total > 0:
+        preco_por_km = 2 
+        custo_viagem = (custo_total / 1000) * preco_por_km
+        st.markdown(f"### 💰 Custo estimado da viagem: **R$ {custo_viagem:.2f}**")
 
 # Informações adicionais sobre o algoritmo de Dijkstra
 st.markdown("""
