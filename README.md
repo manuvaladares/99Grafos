@@ -10,7 +10,7 @@
 | 22/2021906 |  Marcos Vieira Marinho |
 
 ## Sobre 
-O objetivo deste projeto é implementar o Algoritmo de Dijkstra para calcular os menores caminhos entre dois pontos no Distrito Federal. As ruas do DF são representadas como nós no grafo, permitindo a simulação de trajetos otimizados para diferentes rotas.
+Desenvolvemos o 99Grafos, uma aplicação web que calcula o caminho mais curto entre pontos importantes de Brasília usando o algoritmo de Dijkstra em um grafo real de ruas. A aplicação simula um serviço de transporte que calcula rotas otimizadas e fornece estimativas de custo para viagens.
 
 ## Screenshots
 
