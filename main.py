@@ -8,28 +8,57 @@ import heapq  # Para implementar a fila de prioridade
 
 # Configuração da página
 st.set_page_config(page_title="Menor Caminho Manual", layout="wide")
-st.title("📍 Menor Caminho em Brasília (via ruas reais)")
+st.title("📍 Usando o Algoritmo de Dijkstra para descobrir o menor caminho")
+st.markdown("""
+            Com o algoritmo de Dijkstra, você pode encontrar o caminho mais curto entre dois pontos em Brasília, utilizando o grafo real de ruas.
+            """)
 
 # 1. Definir localizações manuais
 locations = {
     "Rodoviária do Plano Piloto": (-15.7938, -47.8825),
     "UnB - Campus Darcy Ribeiro": (-15.754100460854655, -47.87513611438155),
-    "UnB - Campus Gama": (-15.989299, -48.044103),
     "Palácio do Planalto": (-15.7997, -47.8645),
     "Torre de TV": (-15.7896, -47.8916),
     "Congresso Nacional": (-15.7995, -47.8646),
     "Esplanada dos Ministérios": (-15.7991, -47.8616),
-    "Hospital de Base": (-15.7912, -47.8996),
+    "Hospital de Brasília": (-15.843808272983713, -47.88262833462165),
     "Shopping Conjunto Nacional": (-15.7882, -47.8926),
     "Museu Nacional": (-15.7980, -47.8666),
     "Catedral de Brasília": (-15.7989, -47.8750),
+    "Estádio Nacional Mané Garrincha": (-15.7835, -47.8992),
+    "Praça dos Três Poderes": (-15.8009, -47.8609),
+    "Setor Comercial Sul": (-15.7921, -47.8847),
+    "Setor Hoteleiro Norte": (-15.7893, -47.8911),
+    "Setor Hoteleiro Sul": (-15.7942, -47.8918),
+    "Parque Olhos D'Água": (-15.7489, -47.8858),
+    "Patio Brasil Shopping": (-15.79585078452096, -47.892051990468275),
+    "Parque da Cidade": (-15.800625435221287, -47.90449744025181),
+    "Hospital Santa Lúcia": (-15.827571722176934, -47.931268716593245),
+    "Terraço Shopping": (-15.803246369681947, -47.94008953086486),
+    "Taguaparque":(-15.810447263904344, -48.05789459896792),
+    "Hospital da Criança": (-15.75758688366676, -47.91644562555905),
+    "Pier 21": (-15.816228030908151, -47.87370194313569),
+    "Park Shopping": (-15.832413299991769, -47.95421112788403),
+    "Riacho Fundo I": (-15.88305460913746, -48.01648103305345),
+    "Guará I": (-15.819009371543782, -47.982788310807095),
+    "Gaura II": (-15.835735695465734, -47.97995812217213),
+    "Sudoeste": (-15.79553832032996, -47.923489119757896),
+    "Cidade Estrutural": (-15.782310341931979, -47.9941090647448),
+    "Feira dos Importados": (-15.796526535467832, -47.950744744182465),
+    "Shopping Boulevard": (-15.731471908246464, -47.89850604098915),
+    "Igrejinha Nossa Senhora de Fátima": (-15.812315562362476, -47.90395016806459),
+    "Hospital das Forças Armadas": (-15.799845174275168, -47.93459172372393),
+    "Banco do Brasil": (-15.783739894442814, -47.87648434780573),
 }
 
 # 2. Baixar o grafo real de ruas de Brasília
-with st.spinner("Carregando ruas de Brasília..."):
-    centro = locations["Rodoviária do Plano Piloto"]
-    G_real = ox.graph_from_point(centro, dist=15000, network_type='drive')
-    G_real = G_real.to_undirected()
+@st.cache_resource
+def carregar_grafo():
+    with st.spinner("Carregando ruas de Brasília..."):
+        centro = locations["Rodoviária do Plano Piloto"]
+        G_real = ox.graph_from_point(centro, dist=15000, network_type='drive')
+        G_real = G_real.to_undirected()
+        return G_real
 
 # Implementação manual do algoritmo de Dijkstra
 def dijkstra(G, origem, destino):
@@ -114,102 +143,117 @@ def dijkstra(G, origem, destino):
 
 # 3. Interface de seleção
 pontos = list(locations.keys())
-origem = st.selectbox("📍 Origem", pontos, index=0)
-destino = st.selectbox("📍 Destino", pontos, index=1)
+origem_plan = st.selectbox("📍 Origem", pontos, index=0)
+destino_plan = st.selectbox("📍 Destino", pontos, index=1)
+
+calcular = st.button("Calcular Menor Caminho")
 
 # 4. Calcular menor caminho real (Dijkstra nas ruas)
 caminho = []
 custo_total = 0
+path_df = pd.DataFrame()  # Inicializa vazio
+G_real = None
 
-if origem != destino:
-    try:
-        # Converter coordenadas para nós mais próximos no grafo
-        no_origem = ox.distance.nearest_nodes(G_real, locations[origem][1], locations[origem][0])
-        no_destino = ox.distance.nearest_nodes(G_real, locations[destino][1], locations[destino][0])
-        
-        caminho, custo_total = dijkstra(G_real, no_origem, no_destino)
-        
-        if caminho:
-            st.success(f"🚗 Menor caminho (via ruas): {origem} ➡️ {destino} — {custo_total:.0f} metros")
-        else:
-            st.error("❌ Não há caminho viável entre os pontos.")
-    except Exception as e:
-        st.error(f"❌ Erro ao calcular o caminho: {e}")
+if calcular:
+    # Carrega o grafo apenas quando o botão é clicado
+    G_real = carregar_grafo()
+    
+    # Obter coordenadas dos pontos selecionados
+    origem = locations[origem_plan]
+    destino = locations[destino_plan]
+    
+    if origem != destino:
+        try:
+            # Converter coordenadas para nós mais próximos no grafo
+            no_origem = ox.distance.nearest_nodes(G_real, origem[1], origem[0])
+            no_destino = ox.distance.nearest_nodes(G_real, destino[1], destino[0])
+            
+            caminho, custo_total = dijkstra(G_real, no_origem, no_destino)
+            
+            if caminho:
+                st.success(f"🚗 Menor caminho (via ruas): {origem_plan} ➡️ {destino_plan} — {custo_total:.0f} metros")
+                
+                # Se temos um caminho válido, criar dataframe para o caminho
+                if len(caminho) > 1:
+                    path_df = pd.DataFrame([
+                        {
+                            "from_lat": G_real.nodes[a]['y'],
+                            "from_lon": G_real.nodes[a]['x'],
+                            "to_lat": G_real.nodes[b]['y'],
+                            "to_lon": G_real.nodes[b]['x']
+                        }
+                        for a, b in zip(caminho, caminho[1:])
+                    ])
+            else:
+                st.error("❌ Não há caminho viável entre os pontos.")
+        except Exception as e:
+            st.error(f"❌ Erro ao calcular o caminho: {e}")
 
-# 5. Preparar dados para o mapa
-nodes_df = pd.DataFrame([
-    {"name": nome, "lat": lat, "lon": lon} 
-    for nome, (lat, lon) in locations.items()
-])
-
-edges_df = pd.DataFrame([
-    {
-        "from_lat": G_real.nodes[u]['y'],
-        "from_lon": G_real.nodes[u]['x'],
-        "to_lat": G_real.nodes[v]['y'],
-        "to_lon": G_real.nodes[v]['x']
-    }
-    for u, v in G_real.edges()
-])
-
-# Se temos um caminho válido, criar dataframe para o caminho
-path_df = pd.DataFrame()
-if caminho and len(caminho) > 1:
-    path_df = pd.DataFrame([
-        {
-            "from_lat": G_real.nodes[a]['y'],
-            "from_lon": G_real.nodes[a]['x'],
-            "to_lat": G_real.nodes[b]['y'],
-            "to_lon": G_real.nodes[b]['x']
-        }
-        for a, b in zip(caminho, caminho[1:])
+# Mostrar o mapa apenas se o botão foi clicado e o grafo foi carregado
+if calcular and G_real is not None:
+    # 5. Preparar dados para o mapa
+    nodes_df = pd.DataFrame([
+        {"name": nome, "lat": lat, "lon": lon} 
+        for nome, (lat, lon) in locations.items()
     ])
 
-# 6. Mapas com Pydeck
-layer_ruas = pdk.Layer(
-    "LineLayer",
-    data=edges_df,
-    get_source_position='[from_lon, from_lat]',
-    get_target_position='[to_lon, to_lat]',
-    get_color=[180, 180, 180],
-    get_width=1
-)
+    edges_df = pd.DataFrame([
+        {
+            "from_lat": G_real.nodes[u]['y'],
+            "from_lon": G_real.nodes[u]['x'],
+            "to_lat": G_real.nodes[v]['y'],
+            "to_lon": G_real.nodes[v]['x']
+        }
+        for u, v in G_real.edges()
+    ])
 
-layers = [layer_ruas]
-
-# Adicionar camada do caminho se existir
-if not path_df.empty:
-    layer_caminho = pdk.Layer(
+    # 6. Mapas com Pydeck
+    centro = locations["Rodoviária do Plano Piloto"]
+    
+    layer_ruas = pdk.Layer(
         "LineLayer",
-        data=path_df,
+        data=edges_df,
         get_source_position='[from_lon, from_lat]',
         get_target_position='[to_lon, to_lat]',
-        get_color=[255, 0, 0],
-        get_width=4
+        get_color=[180, 180, 180],
+        get_width=1
     )
-    layers.append(layer_caminho)
 
-layer_pontos = pdk.Layer(
-    "ScatterplotLayer",
-    data=nodes_df,
-    get_position='[lon, lat]',
-    get_color='[0, 100, 255]',
-    get_radius=100,
-    pickable=True
-)
-layers.append(layer_pontos)
+    layers = [layer_ruas]
 
-# 7. Renderização
-st.pydeck_chart(pdk.Deck(
-    map_style="mapbox://styles/mapbox/light-v9",
-    initial_view_state=pdk.ViewState(
-        latitude=centro[0],
-        longitude=centro[1],
-        zoom=12
-    ),
-    layers=layers,
-    tooltip={"text": "{name}"}
-), height=800)
+    # Adicionar camada do caminho se existir
+    if not path_df.empty:
+        layer_caminho = pdk.Layer(
+            "LineLayer",
+            data=path_df,
+            get_source_position='[from_lon, from_lat]',
+            get_target_position='[to_lon, to_lat]',
+            get_color=[255, 0, 0],
+            get_width=4
+        )
+        layers.append(layer_caminho)
+
+    layer_pontos = pdk.Layer(
+        "ScatterplotLayer",
+        data=nodes_df,
+        get_position='[lon, lat]',
+        get_color='[0, 100, 255]',
+        get_radius=100,
+        pickable=True
+    )
+    layers.append(layer_pontos)
+
+    # 7. Renderização
+    st.pydeck_chart(pdk.Deck(
+        map_style="mapbox://styles/mapbox/light-v9",
+        initial_view_state=pdk.ViewState(
+            latitude=centro[0],
+            longitude=centro[1],
+            zoom=12
+        ),
+        layers=layers,
+        tooltip={"text": "{name}"}
+    ), height=800)
 
 # Informações adicionais sobre o algoritmo de Dijkstra
 st.markdown("""
