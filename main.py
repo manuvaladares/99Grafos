@@ -2,83 +2,58 @@ import streamlit as st
 import networkx as nx
 import pandas as pd
 import pydeck as pdk
-import overpy
 from geopy.distance import geodesic
 
 # Configuração da página
-st.set_page_config(page_title="Menor Caminho Motoboy", layout="wide")
-st.title("📍 Encontrar Menor Caminho entre Pizzarias, Hospitais ou Farmácias")
+st.set_page_config(page_title="Menor Caminho Manual", layout="wide")
+st.title("📍 Menor Caminho em Brasília (Plano Piloto)")
 
-# 1. Seleção do tipo de amenidade
-tipo = st.selectbox("Escolha o tipo de amenidade", ["Pizzarias", "Hospitais", "Farmácias"])
+# 1. Definir os nós manualmente
+locations = {
+    "Rodoviária do Plano Piloto": (-15.7938, -47.8825),
+    "UnB - Campus Darcy Ribeiro": (-15.754100460854655, -47.87513611438155),
+    "UnB - Campus Gama": (-15.989299, -48.044103),
+    "Palácio do Planalto": (-15.7997, -47.8645),
+    "Torre de TV": (-15.7896, -47.8916),
+    "Congresso Nacional": (-15.7995, -47.8646),
+    "Esplanada dos Ministérios": (-15.7991, -47.8616),
+    "Hospital de Base": (-15.7912, -47.8996),
+    "Shopping Conjunto Nacional": (-15.7882, -47.8926),
+    "Museu Nacional": (-15.7980, -47.8666),
+    "Catedral de Brasília": (-15.7989, -47.8750),
+}
 
-# 2. Filtro Overpass conforme tipo
-if tipo == "Pizzarias":
-    overpass_filter = """
-    (
-      node["amenity"="restaurant"]["cuisine"="pizza"](area.searchArea);
-      node["amenity"="fast_food"]["cuisine"="pizza"](area.searchArea);
-    );
-    """
-elif tipo == "Hospitais":
-    overpass_filter = 'node["amenity"="hospital"](area.searchArea);'
-else:  # Farmácias
-    overpass_filter = 'node["amenity"="pharmacy"](area.searchArea);'
-
-# 3. Consulta à API Overpass
-with st.spinner(f"Consultando {tipo.lower()} no OpenStreetMap..."):
-    api = overpy.Overpass()
-    query = f"""
-    area["name"="Plano Piloto"]->.searchArea;
-    {overpass_filter}
-    out body;
-    """
-    result = api.query(query)
-
-# 4. Extrair locais com nome definido
-locations = {}
-for i, node in enumerate(result.nodes):
-    name = node.tags.get("name")
-    if name:
-        locations[name] = (float(node.lat), float(node.lon))
-
-if not locations:
-    st.error(f"Nenhum {tipo.lower()} com nome encontrado no Plano Piloto.")
-    st.stop()
-
-# 5. Construir grafo com distâncias geográficas
+# 2. Criar grafo e adicionar arestas manualmente com pesos (distância em metros)
 G = nx.DiGraph()
-location_names = list(locations.keys())
 
-distancia_maxima = st.sidebar.slider(
-    "Distância máxima para conectar nós (em metros)",
-    min_value=500, max_value=50000, value=1000, step=100
-)
+for nome, coord in locations.items():
+    G.add_node(nome, pos=coord)
 
-for i, loc1 in enumerate(location_names):
-    for j, loc2 in enumerate(location_names):
-        if i != j:
-            dist = geodesic(locations[loc1], locations[loc2]).meters
-            if dist <= distancia_maxima:
-                G.add_edge(loc1, loc2, weight=dist)
+# Conexões (arestas manuais) com pesos de distância
+def conectar(a, b):
+    dist = geodesic(locations[a], locations[b]).meters
+    G.add_edge(a, b, weight=dist)
+    G.add_edge(b, a, weight=dist)
 
-# 6. Nós isolados
-nodos_conectados = set(G.nodes)
-nodos_isolados = set(location_names) - nodos_conectados
+# Conectar manualmente
+conectar("UnB - Campus Gama", "Rodoviária do Plano Piloto")
+conectar("Rodoviária do Plano Piloto", "Shopping Conjunto Nacional")
+conectar("Rodoviária do Plano Piloto", "UnB - Campus Darcy Ribeiro")
+conectar("Rodoviária do Plano Piloto", "Catedral de Brasília")
+conectar("Torre de TV", "Hospital de Base")
+conectar("Torre de TV", "Catedral de Brasília")
+conectar("Catedral de Brasília", "Museu Nacional")
+conectar("Museu Nacional", "Congresso Nacional")
+conectar("Congresso Nacional", "Palácio do Planalto")
+conectar("Palácio do Planalto", "Esplanada dos Ministérios")
+conectar("Hospital de Base", "Shopping Conjunto Nacional")
 
-if nodos_isolados:
-    st.warning("Locais não conectados (distância > limite): " + ", ".join(nodos_isolados))
+# 3. Interface de seleção
+nodos_disponiveis = list(locations.keys())
+origem = st.selectbox("Origem", nodos_disponiveis, index=0)
+destino = st.selectbox("Destino", nodos_disponiveis, index=1)
 
-# 7. Seleção de origem e destino entre nós conectados
-grafo_ativos = list(G.nodes)
-if len(grafo_ativos) < 2:
-    st.error("Poucos pontos conectados para calcular rotas.")
-    st.stop()
-
-origem = st.selectbox("Origem", grafo_ativos, index=0)
-destino = st.selectbox("Destino", grafo_ativos, index=1)
-
-# 8. Cálculo do menor caminho
+# 4. Cálculo do menor caminho
 caminho, custo = [], 0
 if origem != destino:
     try:
@@ -88,13 +63,13 @@ if origem != destino:
     except nx.NetworkXNoPath:
         st.error("❌ Não há caminho entre os pontos selecionados.")
 
-# 9. Dados para visualização no mapa
+# 5. Dados para visualização no mapa
 nodes_df = pd.DataFrame([
     {"name": name, "lat": lat, "lon": lon}
     for name, (lat, lon) in locations.items()
 ])
 
-all_edges_df = pd.DataFrame([
+edges_df = pd.DataFrame([
     {
         "from_lat": locations[u][0], "from_lon": locations[u][1],
         "to_lat": locations[v][0], "to_lon": locations[v][1]
@@ -109,13 +84,12 @@ path_edges_df = pd.DataFrame([
     }
     for a, b in zip(caminho, caminho[1:])
 ])
-
-# 10. Camadas Pydeck
+# 6. Mapa interativo com Pydeck
 layer_arestas = pdk.Layer(
-    "LineLayer", data=all_edges_df,
+    "LineLayer", data=edges_df,
     get_source_position='[from_lon, from_lat]',
     get_target_position='[to_lon, to_lat]',
-    get_color=[200, 200, 200], get_width=2
+    get_color=[150, 150, 150], get_width=2
 )
 
 layer_caminho = pdk.Layer(
@@ -128,16 +102,15 @@ layer_caminho = pdk.Layer(
 layer_pontos = pdk.Layer(
     "ScatterplotLayer", data=nodes_df,
     get_position='[lon, lat]',
-    get_color='[0, 0, 255]', get_radius=70,
+    get_color='[0, 100, 255]', get_radius=100,
     pickable=True
 )
 
-# 11. Mapa interativo
 st.pydeck_chart(pdk.Deck(
-    map_style='mapbox://styles/mapbox/light-v9',
+    map_style="mapbox://styles/mapbox/light-v9",
     initial_view_state=pdk.ViewState(
-        latitude=-15.796, longitude=-47.885, zoom=13
+        latitude=-15.79, longitude=-47.88, zoom=12
     ),
     layers=[layer_arestas, layer_pontos, layer_caminho],
     tooltip={"text": "{name}"}
-))
+), height=800)  # Aumenta o eixo Y do mapa
