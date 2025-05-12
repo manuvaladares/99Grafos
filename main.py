@@ -3,12 +3,13 @@ import networkx as nx
 import pandas as pd
 import pydeck as pdk
 from geopy.distance import geodesic
+import osmnx as ox
 
 # Configuração da página
 st.set_page_config(page_title="Menor Caminho Manual", layout="wide")
-st.title("📍 Menor Caminho em Brasília (Plano Piloto)")
+st.title("📍 Menor Caminho em Brasília (via ruas reais)")
 
-# 1. Definir os nós manualmente
+# 1. Definir localizações manuais
 locations = {
     "Rodoviária do Plano Piloto": (-15.7938, -47.8825),
     "UnB - Campus Darcy Ribeiro": (-15.754100460854655, -47.87513611438155),
@@ -23,77 +24,66 @@ locations = {
     "Catedral de Brasília": (-15.7989, -47.8750),
 }
 
-# 2. Criar grafo e adicionar arestas manualmente com pesos (distância em metros)
-G = nx.DiGraph()
-
-for nome, coord in locations.items():
-    G.add_node(nome, pos=coord)
-
-# Conexões (arestas manuais) com pesos de distância
-def conectar(a, b):
-    dist = geodesic(locations[a], locations[b]).meters
-    G.add_edge(a, b, weight=dist)
-    G.add_edge(b, a, weight=dist)
-
-# Conectar manualmente
-conectar("UnB - Campus Gama", "Rodoviária do Plano Piloto")
-conectar("Rodoviária do Plano Piloto", "Shopping Conjunto Nacional")
-conectar("Rodoviária do Plano Piloto", "UnB - Campus Darcy Ribeiro")
-conectar("Rodoviária do Plano Piloto", "Catedral de Brasília")
-conectar("Torre de TV", "Hospital de Base")
-conectar("Torre de TV", "Catedral de Brasília")
-conectar("Catedral de Brasília", "Museu Nacional")
-conectar("Museu Nacional", "Congresso Nacional")
-conectar("Congresso Nacional", "Palácio do Planalto")
-conectar("Palácio do Planalto", "Esplanada dos Ministérios")
-conectar("Hospital de Base", "Shopping Conjunto Nacional")
+# 2. Baixar o grafo real de ruas de Brasília
+with st.spinner("Carregando ruas de Brasília..."):
+    centro = locations["Rodoviária do Plano Piloto"]
+    G_real = ox.graph_from_point(centro, dist=15000, network_type='drive')
+    G_real = G_real.to_undirected()
 
 # 3. Interface de seleção
-nodos_disponiveis = list(locations.keys())
-origem = st.selectbox("Origem", nodos_disponiveis, index=0)
-destino = st.selectbox("Destino", nodos_disponiveis, index=1)
+pontos = list(locations.keys())
+origem = st.selectbox("📍 Origem", pontos, index=0)
+destino = st.selectbox("📍 Destino", pontos, index=1)
 
-# 4. Cálculo do menor caminho
-caminho, custo = [], 0
+# 4. Calcular menor caminho real (Dijkstra nas ruas)
+caminho = []
+custo_total = 0
+
 if origem != destino:
     try:
-        caminho = nx.dijkstra_path(G, origem, destino)
-        custo = nx.dijkstra_path_length(G, origem, destino)
-        st.success(f"📍 Menor caminho: {' ➡️ '.join(caminho)} — Total: {custo:.0f} m")
-    except nx.NetworkXNoPath:
-        st.error("❌ Não há caminho entre os pontos selecionados.")
+        # Converter coordenadas para nós mais próximos no grafo
+        no_origem = ox.distance.nearest_nodes(G_real, locations[origem][1], locations[origem][0])
+        no_destino = ox.distance.nearest_nodes(G_real, locations[destino][1], locations[destino][0])
 
-# 5. Dados para visualização no mapa
+        caminho = nx.shortest_path(G_real, no_origem, no_destino, weight='length')
+        custo_total = nx.shortest_path_length(G_real, no_origem, no_destino, weight='length')
+        st.success(f"🚗 Menor caminho (via ruas): {origem} ➡️ {destino} — {custo_total:.0f} metros")
+
+    except nx.NetworkXNoPath:
+        st.error("❌ Não há caminho viável entre os pontos.")
+
+# 5. Preparar dados para o mapa
 nodes_df = pd.DataFrame([
-    {"name": name, "lat": lat, "lon": lon}
-    for name, (lat, lon) in locations.items()
+    {"name": nome, "lat": lat, "lon": lon}
+    for nome, (lat, lon) in locations.items()
 ])
 
 edges_df = pd.DataFrame([
     {
-        "from_lat": locations[u][0], "from_lon": locations[u][1],
-        "to_lat": locations[v][0], "to_lon": locations[v][1]
+        "from_lat": G_real.nodes[u]['y'], "from_lon": G_real.nodes[u]['x'],
+        "to_lat": G_real.nodes[v]['y'], "to_lon": G_real.nodes[v]['x']
     }
-    for u, v in G.edges
+    for u, v in G_real.edges()
 ])
 
-path_edges_df = pd.DataFrame([
+path_df = pd.DataFrame([
     {
-        "from_lat": locations[a][0], "from_lon": locations[a][1],
-        "to_lat": locations[b][0], "to_lon": locations[b][1]
+        "from_lat": G_real.nodes[a]['y'], "from_lon": G_real.nodes[a]['x'],
+        "to_lat": G_real.nodes[b]['y'], "to_lon": G_real.nodes[b]['x']
     }
     for a, b in zip(caminho, caminho[1:])
 ])
-# 6. Mapa interativo com Pydeck
-layer_arestas = pdk.Layer(
+
+# 6. Mapas com Pydeck
+layer_ruas = pdk.Layer(
     "LineLayer", data=edges_df,
     get_source_position='[from_lon, from_lat]',
     get_target_position='[to_lon, to_lat]',
-    get_color=[150, 150, 150], get_width=2
+    get_color=[180, 180, 180], get_width=1
 )
 
 layer_caminho = pdk.Layer(
-    "LineLayer", data=path_edges_df,
+    "LineLayer", data=path_df,
     get_source_position='[from_lon, from_lat]',
     get_target_position='[to_lon, to_lat]',
     get_color=[255, 0, 0], get_width=4
@@ -106,11 +96,12 @@ layer_pontos = pdk.Layer(
     pickable=True
 )
 
+# 7. Renderização
 st.pydeck_chart(pdk.Deck(
     map_style="mapbox://styles/mapbox/light-v9",
     initial_view_state=pdk.ViewState(
-        latitude=-15.79, longitude=-47.88, zoom=12
+        latitude=centro[0], longitude=centro[1], zoom=12
     ),
-    layers=[layer_arestas, layer_pontos, layer_caminho],
+    layers=[layer_ruas, layer_pontos, layer_caminho],
     tooltip={"text": "{name}"}
-), height=800)  # Aumenta o eixo Y do mapa
+), height=800)
