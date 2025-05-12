@@ -5,6 +5,7 @@ import pydeck as pdk
 from geopy.distance import geodesic
 import osmnx as ox
 import heapq  # Para implementar a fila de prioridade
+from shapely.geometry import Point  # Importar Point do shapely
 
 # Configuração da página
 st.set_page_config(page_title="Menor Caminho Manual", layout="wide")
@@ -35,7 +36,6 @@ locations = {
     "Parque da Cidade": (-15.800625435221287, -47.90449744025181),
     "Hospital Santa Lúcia": (-15.827571722176934, -47.931268716593245),
     "Terraço Shopping": (-15.803246369681947, -47.94008953086486),
-    "Taguaparque":(-15.810447263904344, -48.05789459896792),
     "Hospital da Criança": (-15.75758688366676, -47.91644562555905),
     "Pier 21": (-15.816228030908151, -47.87370194313569),
     "Park Shopping": (-15.832413299991769, -47.95421112788403),
@@ -56,7 +56,11 @@ locations = {
 def carregar_grafo():
     with st.spinner("Carregando ruas de Brasília..."):
         centro = locations["Rodoviária do Plano Piloto"]
+        # Obter o grafo
         G_real = ox.graph_from_point(centro, dist=15000, network_type='drive')
+        
+        # Usar o grafo não projetado para evitar erros de projeção
+        # Vamos instalar scikit-learn em vez de projetar o grafo
         G_real = G_real.to_undirected()
         return G_real
 
@@ -165,6 +169,8 @@ if calcular:
     if origem != destino:
         try:
             # Converter coordenadas para nós mais próximos no grafo
+            # Como estamos usando um grafo não projetado, precisamos de scikit-learn
+            # A instalação de scikit-learn é necessária: pip install scikit-learn
             no_origem = ox.distance.nearest_nodes(G_real, origem[1], origem[0])
             no_destino = ox.distance.nearest_nodes(G_real, destino[1], destino[0])
             
@@ -188,6 +194,7 @@ if calcular:
                 st.error("❌ Não há caminho viável entre os pontos.")
         except Exception as e:
             st.error(f"❌ Erro ao calcular o caminho: {e}")
+            st.exception(e)  # Isso mostra o traceback do erro para depuração
 
 # Mostrar o mapa apenas se o botão foi clicado e o grafo foi carregado
 if calcular and G_real is not None:
@@ -197,6 +204,7 @@ if calcular and G_real is not None:
         for nome, (lat, lon) in locations.items()
     ])
 
+    # Preparar as arestas do grafo para visualização
     edges_df = pd.DataFrame([
         {
             "from_lat": G_real.nodes[u]['y'],
