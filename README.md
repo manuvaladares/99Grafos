@@ -19,7 +19,7 @@ Desenvolvemos o 99Grafos, uma aplicação web que calcula o caminho mais curto e
 
 ## Screenshots
 
-![Interface Inicial](./assets/image.png)
+![Interface Inicial](./assets/imagem.png)
 ![Interface durante processamento](./assets/image2.png)
 ![Interface Final](./assets/image3.png)
 
