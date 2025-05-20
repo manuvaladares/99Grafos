@@ -9,3 +9,5 @@ scipy
 plotly
 plotly-express
 plotly-io
+geopy.distance
+geodesic
